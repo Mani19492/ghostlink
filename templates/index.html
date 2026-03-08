@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Locator - OS</title>
+    <!-- Include amCharts 5 for the interactive globe -->
+    <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+    <script src="https://cdn.amcharts.com/lib/5/map.js"></script>
+    <script src="https://cdn.amcharts.com/lib/5/geodata/worldLow.js"></script>
+    <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        
+        body {
+            background-color: #0b0f19;
+            color: #38bdf8;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #chartdiv {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .scanlines {
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            z-index: 2;
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+        }
+
+        /* Draggable Window Base */
+        .window {
+            position: absolute;
+            background-color: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid #38bdf8;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), inset 0 0 10px rgba(56, 189, 248, 0.1);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            resize: both;
+            overflow: hidden;
+        }
+
+        .window-header {
+            background: rgba(56, 189, 248, 0.2);
+            border-bottom: 1px solid #38bdf8;
+            color: #38bdf8;
+            padding: 5px 10px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            letter-spacing: 1px;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .window-header:active {
+            cursor: grabbing;
+        }
+
+        .window-close, .window-min {
+            cursor: pointer;
+            padding: 0 5px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .window-close:hover, .window-min:hover {
+            color: #fff;
+            text-shadow: 0 0 5px #fff;
+        }
+
+        .window-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            font-size: 0.95em;
+            line-height: 1.4;
+            text-shadow: 0 0 2px #38bdf8;
+        }
+
+        /* Terminal Window Specifics */
+        #main-terminal {
+            top: 50px;
+            left: 50px;
+            width: 600px;
+            height: 400px;
+            min-width: 300px;
+            min-height: 200px;
+        }
+
+        #term-output {
+            margin-bottom: 10px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .input-line {
+            display: flex;
+            align-items: center;
+        }
+
+        .prompt {
+            color: #10b981;
+            margin-right: 10px;
+        }
+
+        #term-input {
+            background: transparent;
+            border: none;
+            color: #38bdf8;
+            flex: 1;
+            font-family: inherit;
+            font-size: inherit;
+            outline: none;
+            text-shadow: inherit;
+        }
+
+        /* Data Extraction Modal */
+        #data-modal {
+            display: none;
+            top: 150px;
+            right: 50px;
+            width: 450px;
+            height: 500px;
+            min-width: 300px;
+            min-height: 300px;
+            border-color: #f093fb;
+            box-shadow: 0 0 20px rgba(240, 147, 251, 0.3), inset 0 0 10px rgba(240, 147, 251, 0.1);
+        }
+        
+        #data-modal .window-header {
+            background: rgba(240, 147, 251, 0.2);
+            border-bottom-color: #f093fb;
+            color: #f093fb;
+        }
+
+        #data-modal .window-content {
+            color: #f093fb;
+            text-shadow: 0 0 2px #f093fb;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.3);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.5);
+            border-radius: 4px;
+        }
+        #data-modal ::-webkit-scrollbar-thumb {
+            background: rgba(240, 147, 251, 0.5);
+        }
+
+        /* Minimized Terminal Icon */
+        #minimized-icon {
+            display: none;
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            background-color: rgba(11, 15, 25, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid #38bdf8;
+            border-radius: 4px;
+            padding: 10px 15px;
+            color: #38bdf8;
+            cursor: pointer;
+            z-index: 20;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3), inset 0 0 5px rgba(56, 189, 248, 0.1);
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        #minimized-icon:hover {
+            background-color: rgba(56, 189, 248, 0.2);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.5), inset 0 0 10px rgba(56, 189, 248, 0.2);
+        }
+
+        /* Global HUD overlay */
+        .hud-overlay {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            pointer-events: none;
+            z-index: 5;
+            font-size: 0.8em;
+            opacity: 0.7;
+            text-shadow: 0 0 5px #38bdf8;
+        }
+
+        .cmd-error {
+            color: #ef4444;
+        }
+        .cmd-success {
+            color: #10b981;
+        }
+
+        /* --- Boot Sequence Animations --- */
+        #boot-sequence {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #000;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #10b981;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 40px;
+            transition: opacity 1s ease-in-out, transform 1.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .boot-container {
+            width: 100%;
+            max-width: 800px;
+            text-align: left;
+        }
+
+        .boot-text {
+            font-size: 1.2rem;
+            line-height: 1.8;
+            margin-bottom: 20px;
+            text-shadow: 0 0 5px #10b981;
+        }
+
+        .boot-line {
+            display: block;
+            min-height: 1.8rem;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            width: 100%;
+            height: 20px;
+            border: 1px solid #10b981;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            margin-top: 30px;
+            position: relative;
+            overflow: hidden;
+            opacity: 0; /* Hidden until triggered */
+        }
+        
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #10b981;
+            transition: width 0.1s linear;
+        }
+
+        /* Glitch Effect */
+        .glitch {
+            position: relative;
+            animation: glitch-anim 2s infinite;
+        }
+        
+        @keyframes glitch-anim {
+            0% { transform: translate(0) }
+            2% { transform: translate(-2px, 1px) }
+            4% { transform: translate(2px, -1px) }
+            6% { transform: translate(0) }
+            100% { transform: translate(0) }
+        }
+
+        /* ─── Post-Boot Reveal Animations ─────────────────────────── */
+
+        /* Initial hidden state - everything starts invisible and off-position */
+        #chartdiv {
+            opacity: 0;
+            clip-path: circle(0% at 50% 50%);
+        }
+        .hud-overlay {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        #main-terminal {
+            opacity: 0;
+            transform: translateY(60px);
+        }
+
+        /* Screen flicker — used right after boot fades out */
+        @keyframes screen-flicker {
+            0%   { opacity: 0; }
+            5%   { opacity: 1; }
+            8%   { opacity: 0.1; }
+            12%  { opacity: 1; }
+            16%  { opacity: 0; }
+            22%  { opacity: 1; }
+            24%  { opacity: 0.3; }
+            30%  { opacity: 1; }
+            100% { opacity: 1; }
+        }
+
+        /* Globe iris — circle clip-path expanding from centre */
+        @keyframes iris-open {
+            0%   { clip-path: circle(0% at 50% 50%);   opacity: 0; }
+            20%  { clip-path: circle(10% at 50% 50%);  opacity: 0.4; }
+            60%  { clip-path: circle(55% at 50% 50%);  opacity: 0.9; }
+            100% { clip-path: circle(100% at 50% 50%); opacity: 1; }
+        }
+
+        /* Terminal slides up from below */
+        @keyframes slide-up-term {
+            0%   { opacity: 0; transform: translateY(80px); }
+            60%  { opacity: 1; transform: translateY(-6px); }
+            80%  { transform: translateY(3px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        /* HUD elements wipe in from top */
+        @keyframes hud-appear {
+            0%   { opacity: 0; transform: translateY(-20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Scanline wipe-in: overlay sweeps down revealing the page color */
+        @keyframes scanline-wipe {
+            0%   { transform: scaleY(0); transform-origin: top; }
+            100% { transform: scaleY(1); transform-origin: top; }
+        }
+
+        /* Active classes applied by JS */
+        .globe-iris-open {
+            animation: iris-open 2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .terminal-slide-up {
+            animation: slide-up-term 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+        .hud-fade-in {
+            animation: hud-appear 0.7s ease-out forwards;
+        }
+
+        /* ─── RESPONSIVE BREAKPOINTS ────────────────────────────────── */
+
+        /* Large desktop (1440px+): give terminal more breathing room */
+        @media (min-width: 1440px) {
+            #main-terminal {
+                width: 680px;
+                height: 450px;
+                font-size: 1em;
+            }
+        }
+
+        /* Tablet (641px – 1024px) */
+        @media (max-width: 1024px) and (min-width: 641px) {
+            #main-terminal {
+                width: calc(100vw - 40px);
+                max-width: 580px;
+                height: 380px;
+                top: 30px;
+                left: 20px;
+                right: auto;
+            }
+            .window {
+                resize: none; /* disable resize handle on touch */
+            }
+            .hud-overlay {
+                font-size: 0.7em;
+            }
+            .boot-text {
+                font-size: 1em;
+            }
+        }
+
+        /* Mobile (≤ 640px) */
+        @media (max-width: 640px) {
+            /* Terminal fills the bottom half of the screen */
+            #main-terminal {
+                top: auto !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                width: 100vw !important;
+                height: 55vh !important;
+                border-left: none;
+                border-right: none;
+                border-bottom: none;
+                border-radius: 0;
+                resize: none;
+            }
+            /* Data modal: full-width at top */
+            #data-modal {
+                top: 0;
+                left: 0;
+                right: 0;
+                width: 100vw !important;
+                height: 50vh !important;
+                border-radius: 0;
+                border-top: none;
+                border-left: none;
+                border-right: none;
+            }
+            /* Ping windows: stack from top, full width */
+            .window[id^="ping-window"] {
+                left: 0 !important;
+                right: 0 !important;
+                top: 60px !important;
+                width: 100vw !important;
+                height: 50vh !important;
+                border-radius: 0;
+                resize: none;
+            }
+            /* Smaller font on mobile */
+            .window-content {
+                font-size: 0.8em;
+                padding: 10px;
+            }
+            .window-header {
+                font-size: 0.8em;
+                padding: 4px 8px;
+            }
+            /* HUD: compact top-right */
+            .hud-overlay {
+                font-size: 0.65em;
+                top: 10px;
+                right: 10px;
+            }
+            /* Minimized icon: bottom center */
+            #minimized-icon {
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                font-size: 0.85em;
+            }
+            /* Boot text smaller */
+            .boot-text {
+                font-size: 0.85rem;
+                line-height: 1.6;
+            }
+            .progress-container {
+                margin-top: 15px;
+            }
+            /* Help text word-wrap */
+            #term-output {
+                white-space: pre-wrap;
+                word-break: break-all;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Boot Sequence Overlay -->
+    <div id="boot-sequence">
+        <div class="boot-container">
+            <div id="boot-text" class="boot-text"></div>
+            <div id="progress-container" class="progress-container">
+                <div id="progress-bar" class="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="chartdiv"></div>
+    <div class="scanlines"></div>
+
+    <div class="hud-overlay">
+        <div>SYS.OP.VER: 9.4.2</div>
+        <div>GLOBAL_TRACKING: ACTIVE</div>
+        <div id="clock"></div>
+    </div>
+
+    <!-- Main Command Terminal -->
+    <div class="window" id="main-terminal">
+        <div class="window-header" onmousedown="startDrag(event, 'main-terminal')" ontouchstart="startDrag(event, 'main-terminal')">
+            <span>[SYS://CMD_INTERFACE]</span>
+            <div>
+                <span class="window-min" onclick="minimizeTerminal()">[_]</span>
+                <span class="window-close" onclick="printToTerm('Command interface cannot be closed.')">[X]</span>
+            </div>
+        </div>
+        <div class="window-content" onclick="document.getElementById('term-input').focus()">
+            <div id="term-output">
+LINK_LOCATOR OS v1.0.0
+
+AVAILABLE COMMANDS:
+  help                       Show this message
+  shorten <url> [alias]      Shorten a URL with optional custom alias
+  generate <code> <desc>     Generate a new short link based on an existing one
+  links                      List all shortened links
+  clicks [code]              List clicks for a specific short code
+  ping                       Broadcast & dump all intercepted click payloads
+  clear                      Clear terminal output
+  reload                     Reload globe data
+            </div>
+            <div class="input-line">
+                <span class="prompt">root@system:~$</span>
+                <input type="text" id="term-input" autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Extraction Terminal -->
+    <div class="window" id="data-modal">
+        <div class="window-header" onmousedown="startDrag(event, 'data-modal')" ontouchstart="startDrag(event, 'data-modal')">
+            <span>[DATA://EXTRACT]</span>
+            <span class="window-close" onclick="closeDataModal()">[X]</span>
+        </div>
+        <div class="window-content" id="data-content">
+            <!-- Data will be typed here -->
+        </div>
+    </div>
+
+    <!-- Minimized Icon -->
+    <div id="minimized-icon" onclick="restoreTerminal()">
+        >_ TERM_LINK
+    </div>
+
+    <script>
+        // Start Clock
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = now.toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+        }, 1000);
+
+        // --- Window Dragging Logic (mouse + touch) ---
+        let draggedElement = null;
+        let offsetX = 0, offsetY = 0;
+
+        function getEventCoords(e) {
+            if (e.touches && e.touches.length > 0) {
+                return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }
+            return { x: e.clientX, y: e.clientY };
+        }
+
+        function startDrag(e, id) {
+            // Don't drag on mobile if clicking close/min buttons
+            if (e.target.classList.contains('window-close') || e.target.classList.contains('window-min')) return;
+            draggedElement = document.getElementById(id);
+            // bring to front
+            draggedElement.style.zIndex = parseInt(draggedElement.style.zIndex || 10) + 1;
+            const coords = getEventCoords(e);
+            offsetX = coords.x - draggedElement.getBoundingClientRect().left;
+            offsetY = coords.y - draggedElement.getBoundingClientRect().top;
+            
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', stopDrag);
+            document.addEventListener('touchmove', drag, { passive: false });
+            document.addEventListener('touchend', stopDrag);
+        }
+
+        function drag(e) {
+            if (!draggedElement) return;
+            e.preventDefault();
+            const coords = getEventCoords(e);
+            draggedElement.style.left = (coords.x - offsetX) + 'px';
+            draggedElement.style.top  = (coords.y - offsetY) + 'px';
+            // Remove bottom/right anchor when user drags on mobile
+            draggedElement.style.bottom = 'auto';
+            draggedElement.style.right = 'auto';
+        }
+
+        function stopDrag() {
+            draggedElement = null;
+            document.removeEventListener('mousemove', drag);
+            document.removeEventListener('mouseup', stopDrag);
+            document.removeEventListener('touchmove', drag);
+            document.removeEventListener('touchend', stopDrag);
+        }
+
+        function minimizeTerminal() {
+            document.getElementById('main-terminal').style.display = 'none';
+            document.getElementById('minimized-icon').style.display = 'block';
+        }
+
+        function restoreTerminal() {
+            const term = document.getElementById('main-terminal');
+            term.style.display = 'flex';
+            
+            // Center it
+            const w = term.offsetWidth;
+            const h = term.offsetHeight;
+            term.style.left = (window.innerWidth / 2 - w / 2) + 'px';
+            term.style.top = (window.innerHeight / 2 - h / 2) + 'px';
+            
+            document.getElementById('minimized-icon').style.display = 'none';
+            document.getElementById('term-input').focus();
+        }
+
+        // --- Terminal Logic ---
+        const termInput = document.getElementById('term-input');
+        const termOutput = document.getElementById('term-output');
+
+        // Command History (Up/Down arrow)
+        let cmdHistory = [];
+        let historyIndex = -1;
+
+        function printToTerm(text, className="") {
+            const span = document.createElement('span');
+            if(className) span.className = className;
+            span.innerHTML = text + '\n';
+            termOutput.appendChild(span);
+            // Scroll to bottom
+            const contentDiv = termOutput.parentElement;
+            contentDiv.scrollTop = contentDiv.scrollHeight;
+        }
+
+        termInput.addEventListener('keydown', async function(e) {
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (cmdHistory.length > 0) {
+                    historyIndex = Math.min(historyIndex + 1, cmdHistory.length - 1);
+                    this.value = cmdHistory[cmdHistory.length - 1 - historyIndex];
+                    // Move cursor to end
+                    const len = this.value.length;
+                    this.setSelectionRange(len, len);
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                historyIndex = Math.max(historyIndex - 1, -1);
+                this.value = historyIndex >= 0 ? cmdHistory[cmdHistory.length - 1 - historyIndex] : '';
+            } else if (e.key === 'Enter') {
+                const cmd = this.value.trim();
+                printToTerm(`<span class="prompt">root@system:~$</span> ${cmd}`);
+                this.value = '';
+                historyIndex = -1;
+                
+                if (!cmd) return;
+                // Save to history
+                if (cmd && (cmdHistory.length === 0 || cmdHistory[cmdHistory.length - 1] !== cmd)) {
+                    cmdHistory.push(cmd);
+                }
+                await processCommand(cmd);
+            }
+        });
+
+        // --- Ping Window Spawner ---
+        let pingWindowCount = 0;
+
+        function spawnPingWindow(click, idx) {
+            pingWindowCount++;
+            const id = `ping-window-${pingWindowCount}`;
+            const win = document.createElement('div');
+            win.className = 'window';
+            win.id = id;
+            // Cascade position so windows don't fully stack
+            const offsetX = 30 + (idx % 6) * 30;
+            const offsetY = 30 + (idx % 6) * 30;
+            win.style.cssText = `
+                top: ${offsetX}px;
+                right: ${offsetX + 20}px;
+                width: 420px;
+                height: 480px;
+                min-width: 280px;
+                min-height: 200px;
+                border-color: #f093fb;
+                box-shadow: 0 0 20px rgba(240,147,251,0.3), inset 0 0 10px rgba(240,147,251,0.1);
+                z-index: ${20 + pingWindowCount};
+            `;
+
+            win.innerHTML = `
+                <div class="window-header" onmousedown="startDrag(event,'${id}')" style="background:rgba(240,147,251,0.2); border-color:#f093fb; color:#f093fb;">
+                    <span>[INTERCEPT_${String(idx+1).padStart(3,'0')}] &lt;${click.short_code}&gt;</span>
+                    <span class="window-close" onclick="document.getElementById('${id}').remove()" style="color:#f093fb">[X]</span>
+                </div>
+                <div class="window-content" id="${id}-content" style="color:#f093fb; text-shadow:0 0 2px #f093fb;"></div>
+            `;
+            document.body.appendChild(win);
+
+            const content = document.getElementById(`${id}-content`);
+            const isBot = click.is_bot;
+            const lines = [
+                `> INTERCEPTED PACKET [${idx+1}]`,
+                ` `,
+                `[TIMESTAMP]     ${click.clicked_at}`,
+                `[IP_ADDR]       ${click.ip_address || 'UNDISP'}`,
+                `[CITY/REGION]   ${click.location || 'UNDISP'}`,
+                `[GPS_COORD]     ${click.latitude || '?'}, ${click.longitude || '?'}`,
+                `[ISP/NETWORK]   ${click.network_type || 'UNDISP'}`,
+                `[TIMEZONE]      ${click.timezone || 'UNDISP'}`,
+                ` `,
+                `--- HARDWARE FINGERPRINT ---`,
+                `[OPERATIVE_SYS] ${click.os || 'UNDISP'}`,
+                `[BROWSER]       ${click.browser || 'UNDISP'}`,
+                `[DEVICE]        ${click.device_type || 'UNDISP'} | ${click.device_brand || ''} ${click.device_model || ''}`,
+                `[DISPLAY_RES]   ${click.screen_resolution || 'UNDISP'}`,
+                `[COLOR_DEPTH]   ${click.color_depth || 'UNDISP'}`,
+                `[CPU_CORES]     ${click.cpu_cores || 'UNDISP'}`,
+                `[RAM_ALLOC]     ${click.device_memory ? click.device_memory + ' GB' : 'UNDISP'}`,
+                `[BATTERY]       ${click.battery_level || 'UNDISP'}`,
+                `[SYS_LANG]      ${click.language || 'UNDISP'}`,
+                `[BOT_DETECT]    ${isBot ? '⚠ AUTOMATED AGENT' : 'HUMAN OPERATOR'}`,
+                ` `,
+                `[REF_LINK]      ${click.original_url || 'UNDISP'}`,
+                `> EOF.`
+            ];
+
+            let idx2 = 0;
+            function typePingLine() {
+                if (idx2 < lines.length) {
+                    const div = document.createElement('div');
+                    div.textContent = lines[idx2];
+                    content.appendChild(div);
+                    content.scrollTop = content.scrollHeight;
+                    idx2++;
+                    setTimeout(typePingLine, 20 + Math.random() * 30);
+                }
+            }
+            // Slight stagger so windows don't all type at once
+            setTimeout(typePingLine, idx * 200);
+        }
+
+        async function processCommand(cmdLine) {
+            const args = cmdLine.split(' ').filter(a => a);
+            const cmd = args[0].toLowerCase();
+
+            if (cmd === 'help') {
+                printToTerm(`AVAILABLE COMMANDS:
+  help                       Show this message
+  shorten <url> [alias]      Shorten a URL with optional custom alias
+  generate <code> <desc>     Generate a new short link based on an existing one
+  links                      List all shortened links
+  clicks [code]              List clicks for a specific short code
+  ping                       Broadcast & dump all intercepted click payloads
+  clear                      Clear terminal output
+  reload                     Reload globe data
+`);
+            } else if (cmd === 'clear') {
+                termOutput.innerHTML = '';
+            } else if (cmd === 'shorten') {
+                if (args.length < 2) {
+                    printToTerm('ERROR: Missing URL parameter.', 'cmd-error');
+                    return;
+                }
+                const url = args[1];
+                const custom = args[2];
+                try {
+                    const res = await fetch('/api/shorten', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url, custom_code: custom })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        printToTerm(`SUCCESS: Link shortened.`, 'cmd-success');
+                        printToTerm(`ORIGINAL: ${data.original_url}`);
+                        printToTerm(`SHORT_URL: ${data.short_url}`);
+                    } else {
+                        printToTerm(`ERROR: ${data.error}`, 'cmd-error');
+                    }
+                } catch(e) {
+                    printToTerm(`SYSTEM ERROR: ${e}`, 'cmd-error');
+                }
+            } else if (cmd === 'links') {
+                try {
+                    const res = await fetch('/api/urls');
+                    const urls = await res.json();
+                    if (urls.length === 0) {
+                        printToTerm('No active links found.');
+                        return;
+                    }
+                    printToTerm('ACTIVE DATABASE LINKS:');
+                    urls.forEach(u => {
+                        printToTerm(`[${u.short_code}] -> ${u.original_url} (Clicks: ${u.total_clicks})`);
+                    });
+                } catch(e) {
+                    printToTerm(`SYSTEM ERROR: ${e}`, 'cmd-error');
+                }
+            } else if (cmd === 'clicks') {
+                if (args.length < 2) {
+                    printToTerm('ERROR: Missing short code parameter.', 'cmd-error');
+                    return;
+                }
+                const code = args[1];
+                try {
+                    const res = await fetch(`/api/analytics/${code}`);
+                    if(!res.ok) {
+                        printToTerm(`ERROR: Link locus not found for ${code}`, 'cmd-error');
+                        return;
+                    }
+                    const data = await res.json();
+                    printToTerm(`ANALYTICS FOR [${code}]:`);
+                    printToTerm(`TOTAL CLICKS: ${data.total_clicks}`);
+                    data.clicks.forEach((c, idx) => {
+                        printToTerm(`  ${idx+1}. ${c.clicked_at} | IP: ${c.ip_address} | Loc: ${c.location}`);
+                    });
+                } catch(e) {
+                    printToTerm(`SYSTEM ERROR: ${e}`, 'cmd-error');
+                }
+            } else if (cmd === 'ping') {
+                printToTerm('> INITIATING GLOBAL INTERCEPT SCAN...', 'cmd-success');
+                try {
+                    const res = await fetch('/api/all_clicks');
+                    const data = await res.json();
+                    const clicks = data.clicks;
+                    if (!clicks || clicks.length === 0) {
+                        printToTerm('NO SIGNALS INTERCEPTED. AWAITING TARGETS.', 'cmd-error');
+                        return;
+                    }
+                    printToTerm(`> ${clicks.length} DEVICE(S) INTERCEPTED. SPAWNING INTERCEPT WINDOWS...`, 'cmd-success');
+                    // Spawn a separate terminal window for each click
+                    clicks.forEach((c, idx) => spawnPingWindow(c, idx));
+                    printToTerm(`> ${clicks.length} TERMINAL(S) OPENED. STREAMS ACTIVE.`, 'cmd-success');
+                } catch(e) {
+                    printToTerm(`SYSTEM ERROR: ${e}`, 'cmd-error');
+                }
+            } else if (cmd === 'generate') {
+                // generate <existing_code> <new_alias_or_description>
+                if (args.length < 3) {
+                    printToTerm('USAGE: generate <existing_code> <new_alias>', 'cmd-error');
+                    printToTerm('  Example: generate github mygithub');
+                    return;
+                }
+                const sourceCode = args[1];
+                const newAlias = args[2];
+                try {
+                    // Look up the original URL for this short code
+                    const res = await fetch(`/api/analytics/${sourceCode}`);
+                    if (!res.ok) {
+                        printToTerm(`ERROR: Source link [${sourceCode}] not found.`, 'cmd-error');
+                        return;
+                    }
+                    const srcData = await res.json();
+                    const originalUrl = srcData.original_url;
+                    // Create a new shortened link to the same destination
+                    const shrRes = await fetch('/api/shorten', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: originalUrl, custom_code: newAlias })
+                    });
+                    const shrData = await shrRes.json();
+                    if (shrRes.ok) {
+                        printToTerm('> LINK CLONE GENERATED.', 'cmd-success');
+                        printToTerm(`[SOURCE]     ${sourceCode} -> ${originalUrl}`);
+                        printToTerm(`[NEW_ALIAS]  ${shrData.short_code}`);
+                        printToTerm(`[SHORT_URL]  ${shrData.short_url}`);
+                    } else {
+                        printToTerm(`ERROR: ${shrData.error}`, 'cmd-error');
+                    }
+                } catch(e) {
+                    printToTerm(`SYSTEM ERROR: ${e}`, 'cmd-error');
+                }
+            } else if (cmd === 'reload') {
+                printToTerm('Reloading global tracking data...');
+                await fetchGlobalData();
+                printToTerm('Done.', 'cmd-success');
+            } else {
+                printToTerm(`Command not found: ${cmd}. Type 'help' for a list of commands.`, 'cmd-error');
+            }
+        }
+
+        // --- amCharts Globe & Interactive Logic ---
+        let globalClicks = [];
+        let root, chart, polygonSeries, pointSeries, rotationAnimation;
+
+        function initGlobe() {
+            root = am5.Root.new("chartdiv");
+
+            root.setThemes([am5themes_Animated.new(root)]);
+
+            chart = root.container.children.push(am5map.MapChart.new(root, {
+                panX: "rotateX",
+                panY: "rotateY",
+                projection: am5map.geoOrthographic(),
+                paddingBottom: 20,
+                paddingTop: 20,
+                paddingLeft: 20,
+                paddingRight: 20
+            }));
+
+            // 1. Background series (Ocean) - MUST BE PUSHED FIRST
+            var backgroundSeries = chart.series.push(am5map.MapPolygonSeries.new(root, {}));
+            backgroundSeries.mapPolygons.template.setAll({
+                fill: am5.color(0x0f172a), // Very dark blue
+                fillOpacity: 1,
+                strokeOpacity: 0
+            });
+            backgroundSeries.data.push({
+                geometry: am5map.getGeoRectangle(90, 180, -90, -180)
+            });
+
+            // 2. Graticule series (Grid lines)
+            var graticuleSeries = chart.series.push(
+                am5map.GraticuleSeries.new(root, { step: 10 })
+            );
+            graticuleSeries.mapLines.template.setAll({
+                stroke: am5.color(0x38bdf8),
+                strokeOpacity: 0.1
+            });
+
+            // 3. Polygon series (Countries) - MUST BE PUSHED AFTER BACKGROUND
+            polygonSeries = chart.series.push(am5map.MapPolygonSeries.new(root, {
+                geoJSON: am5geodata_worldLow 
+            }));
+
+            polygonSeries.mapPolygons.template.setAll({
+                tooltipText: "{name}",
+                toggleKey: "active",
+                interactive: true,
+                fill: am5.color(0x38bdf8), // Bright cyan for clear visibility
+                stroke: am5.color(0x0284c7), // Darker outline for contrast
+                strokeWidth: 1.5,
+                fillOpacity: 1 // Opaque to stand out
+            });
+
+            polygonSeries.mapPolygons.template.states.create("hover", {
+                fill: am5.color(0x7dd3fc),
+                fillOpacity: 1
+            });
+
+            // 4. Point series (Markers)
+            pointSeries = chart.series.push(am5map.MapPointSeries.new(root, {}));
+            pointSeries.bullets.push(function() {
+                var circle = am5.Circle.new(root, {
+                    radius: 6,
+                    fill: am5.color(0xf093fb),
+                    tooltipText: "{ip_address}\n{location}",
+                    cursorOverStyle: "pointer"
+                });
+
+                circle.events.on("click", function(ev) {
+                    var dataContext = ev.target.dataItem.dataContext;
+                    openDataModal(dataContext.originalData);
+                });
+
+                // Add a pulse animation
+                circle.animate({
+                    key: "radius",
+                    to: 8,
+                    duration: 1000,
+                    easing: am5.ease.out(am5.ease.cubic),
+                    loops: Infinity
+                });
+                
+                return am5.Bullet.new(root, {
+                    sprite: circle
+                });
+            });
+
+            // Auto rotation animation
+            rotationAnimation = chart.animate({
+                key: "rotationX",
+                from: 0,
+                to: 360,
+                duration: 30000,
+                loops: Infinity
+            });
+
+            // Pause rotation on interact
+            chart.chartContainer.events.on("pointerdown", function() {
+                if (rotationAnimation) {
+                    rotationAnimation.stop();
+                }
+            });
+
+            // Resume rotation after interact - listen on body so releasing outside globe also works
+            document.body.addEventListener('pointerup', function() {
+                if (!rotationAnimation || !rotationAnimation.playing) {
+                    rotationAnimation = chart.animate({
+                        key: "rotationX",
+                        from: chart.get("rotationX"),
+                        to: chart.get("rotationX") + 360,
+                        duration: 30000,
+                        loops: Infinity
+                    });
+                }
+            });
+
+            chart.appear(1000, 100);
+        }
+
+        async function fetchGlobalData() {
+            try {
+                const res = await fetch('/api/all_clicks');
+                const data = await res.json();
+                globalClicks = data.clicks;
+                plotMarkers();
+            } catch(e) {
+                console.error('Failed to fetch global clicks', e);
+            }
+        }
+
+        function plotMarkers() {
+            const pointData = globalClicks.filter(c => c.latitude && c.longitude).map(c => {
+                return {
+                    geometry: { type: "Point", coordinates: [c.longitude, c.latitude] },
+                    ip_address: c.ip_address,
+                    location: c.location,
+                    originalData: c
+                };
+            });
+            pointSeries.data.setAll(pointData);
+        }
+
+        // --- Data Extraction Modal Logic ---
+        // Cancel token for typing animation to prevent double-print
+        let modalTypingActive = false;
+
+        function openDataModal(data) {
+            const modal = document.getElementById('data-modal');
+            const content = document.getElementById('data-content');
+            
+            // Cancel any ongoing typing animation
+            modalTypingActive = false;
+            content.innerHTML = '';
+            modal.style.display = 'flex';
+            
+            const lines = [
+                "> COMPILING PACKET HEADER...",
+                "> DECRYPTING METADATA...",
+                " ",
+                `[REF_URL]       ${data.short_code} -> ${data.original_url}`,
+                `[TIMESTAMP]     ${data.clicked_at}`,
+                " ",
+                "--- GEOLOCATION PROTOCOL ---",
+                `[IP_ADDR]       ${data.ip_address || 'UNDISP'}`,
+                `[CITY/REGION]   ${data.location || 'UNDISP'}`,
+                `[GPS_COORD]     ${data.latitude || '0'}, ${data.longitude || '0'}`,
+                `[ISP/NETWORK]   ${data.network_type || 'UNDISP'}`,
+                `[TIMEZONE]      ${data.timezone || 'UNDISP'}`,
+                " ",
+                "--- CLIENT HARDWARE FINGERPRINT ---",
+                `[DEVICE_CLASS]  ${data.device_type || 'UNDISP'}`,
+                `[MANUFACTURER]  ${data.device_brand || 'UNDISP'} ${data.device_model || ''}`,
+                `[OPERATIVE_SYS] ${data.os || 'UNDISP'}`,
+                `[NAVIGATOR]     ${data.browser || 'UNDISP'}`,
+                `[DISPLAY_RES]   ${data.screen_resolution || 'UNDISP'}`,
+                `[COLOR_DEPTH]   ${data.color_depth || 'UNDISP'}`,
+                `[LOGIC_CORES]   ${data.cpu_cores || 'UNDISP'}`,
+                `[RAM_ALLOC]     ${data.device_memory ? data.device_memory + ' GB' : 'UNDISP'}`,
+                `[BATTERY_VLT]   ${data.battery_level || 'UNDISP'}`,
+                `[SYS_LANG]      ${data.language || 'UNDISP'}`,
+                `[BOT_DETECT]    ${data.is_bot ? '⚠ AUTOMATED AGENT DETECTED' : 'HUMAN OPERATOR'}`,
+                " ",
+                "> EOF."
+            ];
+
+            let currentLine = 0;
+            // Capture a local reference to the active-session flag
+            modalTypingActive = true;
+            const sessionActive = () => modalTypingActive;
+
+            function typeLine() {
+                if (!sessionActive()) return; // Abort if a new modal opened
+                if (currentLine < lines.length) {
+                    const lineDiv = document.createElement('div');
+                    lineDiv.textContent = lines[currentLine];
+                    content.appendChild(lineDiv);
+                    content.scrollTop = content.scrollHeight;
+                    
+                    let delay = 30 + Math.random() * 50;
+                    currentLine++;
+                    setTimeout(typeLine, delay);
+                }
+            }
+            typeLine();
+        }
+
+        function closeDataModal() {
+            document.getElementById('data-modal').style.display = 'none';
+        }
+
+        // --- Boot Sequence Logic ---
+        const bootLines = [
+            "INIT SYSLOG...",
+            "LOADING KERNEL MODULES... [OK]",
+            "MOUNTING VIRTUAL FILE SYSTEMS... [OK]",
+            "ESTABLISHING SECURE UPLINK...",
+            "> CONNECTION ENCRYPTED (AES-256)",
+            "COMPILING GEODATA PROTOCOLS...",
+            "[amCharts 5] ENGINE INITIALIZATION...",
+            "WARNING: UNAUTHORIZED ACCESS DETECTED.",
+            "BYPASSING SECURITY FIREWALL... [SUCCESS]",
+            "PREPARING MAIN OS INTERFACE..."
+        ];
+
+        async function playBootSequence() {
+            const bootTextDiv = document.getElementById('boot-text');
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            
+            // 1. Type out lines
+            for (let i = 0; i < bootLines.length; i++) {
+                const lineSpan = document.createElement('span');
+                lineSpan.className = 'boot-line';
+                if (bootLines[i].includes('WARNING')) {
+                    lineSpan.style.color = '#ef4444';
+                    lineSpan.style.textShadow = '0 0 5px #ef4444';
+                    lineSpan.classList.add('glitch');
+                }
+                bootTextDiv.appendChild(lineSpan);
+                
+                await typeText(lineSpan, bootLines[i], 15 + Math.random() * 20);
+                await new Promise(r => setTimeout(r, 100 + Math.random() * 200)); // Pause between lines
+            }
+
+            // 2. Show and animate progress bar
+            progressContainer.style.opacity = '1';
+            for (let p = 0; p <= 100; p += Math.random() * 15) {
+                if (p > 100) p = 100;
+                progressBar.style.width = p + '%';
+                await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+            }
+            progressBar.style.width = '100%';
+            
+            await new Promise(r => setTimeout(r, 400)); // Final pause
+
+            // 3. Cinematic multi-stage reveal
+            const bootOverlay = document.getElementById('boot-sequence');
+            const chartdiv   = document.getElementById('chartdiv');
+            const terminal   = document.getElementById('main-terminal');
+            const hud        = document.querySelector('.hud-overlay');
+
+            // Step A: fade out boot screen
+            bootOverlay.style.transition = 'opacity 0.6s ease-in-out';
+            bootOverlay.style.opacity = '0';
+            await new Promise(r => setTimeout(r, 650));
+            bootOverlay.style.display = 'none';
+
+            // Step B: screen-flicker on chartdiv (raw opacity keyframe)
+            chartdiv.style.animation = 'screen-flicker 0.9s steps(1, end) forwards';
+            await new Promise(r => setTimeout(r, 900));
+            chartdiv.style.animation = '';
+
+            // Step C: iris-open globe reveal
+            chartdiv.classList.add('globe-iris-open');
+            await new Promise(r => setTimeout(r, 800)); // let iris open 40%
+
+            // Step D: slide-up terminal (overlaps with iris)
+            terminal.classList.add('terminal-slide-up');
+            await new Promise(r => setTimeout(r, 500)); // terminal settling
+
+            // Step E: HUD fade-in from top
+            hud.classList.add('hud-fade-in');
+            await new Promise(r => setTimeout(r, 800)); // iris finishes
+
+            // Step F: print boot messages to terminal
+            termInput.focus();
+            printToTerm("SYSTEM BOOT COMPLETED.");
+            printToTerm("GLOBAL TRACKING LINKUP ESTABLISHED.", "cmd-success");
+            printToTerm(" ");
+        }
+
+        async function typeText(element, text, speed) {
+            for (let i = 0; i < text.length; i++) {
+                element.textContent += text.charAt(i);
+                await new Promise(r => setTimeout(r, speed));
+            }
+        }
+
+        // Boot sequence
+        window.onload = () => {
+            initGlobe();
+            fetchGlobalData();
+            // Start boot animation instead of focusing immediately
+            playBootSequence();
+        };
+
+    </script>
+</body>
+</html>

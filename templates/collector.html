@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Redirecting...</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding-top: 50px; background: #000; color: #333; }
+    </style>
+</head>
+<body>
+    <p>Preparing to redirect you to the destination...</p>
+    <script>
+        async function getDeviceData() {
+            let info = { user_agent: navigator.userAgent };
+
+            // --- Basic Hardware Fingerprinting ---
+            try {
+                info.screen_resolution = `${window.screen.width}x${window.screen.height}`;
+                info.color_depth = `${window.screen.colorDepth}-bit`;
+                info.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                info.language = navigator.language;
+                info.cpu_cores = navigator.hardwareConcurrency;
+                info.device_memory = navigator.deviceMemory;
+                info.is_bot = navigator.webdriver === true; // Detects headless browsers
+                info.cookie_enabled = navigator.cookieEnabled;
+                info.do_not_track = navigator.doNotTrack;
+            } catch (e) {
+                console.error("Hardware specs error:", e);
+            }
+
+            // --- Battery Status API ---
+            try {
+                if (navigator.getBattery) {
+                    const battery = await navigator.getBattery();
+                    const level = Math.round(battery.level * 100);
+                    const charging = battery.charging ? 'charging' : 'discharging';
+                    info.battery_level = `${level}% (${charging})`;
+                } else {
+                    info.battery_level = 'API unavailable';
+                }
+            } catch (e) {
+                info.battery_level = 'Permission denied';
+            }
+
+            // --- High Entropy User-Agent Data (Chrome/Edge only) ---
+            if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+                try {
+                    const values = await navigator.userAgentData.getHighEntropyValues([
+                        "model",
+                        "platform",
+                        "platformVersion",
+                        "architecture",
+                        "fullVersionList",
+                        "brands"
+                    ]);
+                    if (values.model)           info.device_model   = values.model;
+                    if (values.platform)        info.os_name        = values.platform;
+                    if (values.platformVersion) info.os_version     = values.platformVersion;
+                    if (values.architecture)    info.cpu_arch       = values.architecture;
+                    if (values.brands && values.brands.length > 0) {
+                        // Pick the "real" browser brand (skip Chromium/Not:A-Brand)
+                        const realBrand = values.brands.find(b => !b.brand.includes('Not') && b.brand !== 'Chromium') || values.brands[0];
+                        info.device_brand = realBrand.brand;
+                        info.browser_version = realBrand.version;
+                    }
+                    if (values.fullVersionList && values.fullVersionList.length > 0) {
+                        const realBrand = values.fullVersionList.find(b => !b.brand.includes('Not') && b.brand !== 'Chromium');
+                        if (realBrand) info.browser_name = realBrand.brand;
+                    }
+                } catch (e) {
+                    console.error("HighEntropyValues error:", e);
+                }
+            }
+
+            // --- Network Connection ---
+            if (navigator.connection) {
+                info.network_type = navigator.connection.effectiveType;
+                info.downlink_mbps = navigator.connection.downlink;
+            }
+
+            return info;
+        }
+
+        async function collectAndSend() {
+            const short_code = "{{ short_code }}";
+            const dest = "{{ original_url }}";
+            let payload = await getDeviceData();
+
+            function send() {
+                fetch(`/api/click/${short_code}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }).finally(() => {
+                    window.location.href = dest;
+                });
+            }
+
+            // gather geolocation, enforcing permission prompt lock-on
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    payload.latitude  = pos.coords.latitude;
+                    payload.longitude = pos.coords.longitude;
+                    payload.gps_accuracy = pos.coords.accuracy;
+                    send();
+                }, err => {
+                    send(); // proceed even if denied
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            } else {
+                send();
+            }
+        }
+        collectAndSend();
+    </script>
+</body>
+</html>
