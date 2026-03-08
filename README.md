@@ -30,10 +30,11 @@
 </div>
 
 ---
-
 ## 🎬 Live Demo
 
-<video src="20260308-0355-46.9154263.mp4" controls width="100%"></video>
+Click the image below to watch the demo:
+
+[![GhostLink Demo](https://img.youtube.com/vi/3qA7qzza04c/maxresdefault.jpg)](https://youtu.be/3qA7qzza04c)
 
 > **Walkthrough:** Minting a tracked link via the CMD interface → sharing it → watching the hot-pink globe pin appear live → clicking the pin to spawn the decrypted `[DATA://EXTRACT]` terminal overlay with full device fingerprint.
 
